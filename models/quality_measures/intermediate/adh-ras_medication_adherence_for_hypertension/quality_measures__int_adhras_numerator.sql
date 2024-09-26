@@ -145,7 +145,7 @@ with denominator as (
 , patient_with_pdc as (
 
     select
-          dc.patient_id
+          days_covered_patient.patient_id
         , days_covered*100/treatment_period_days as pdc
     from patient_with_days_covered as days_covered_patient
     inner join patient_with_treatment_period_days as treatment_period_days_patient
