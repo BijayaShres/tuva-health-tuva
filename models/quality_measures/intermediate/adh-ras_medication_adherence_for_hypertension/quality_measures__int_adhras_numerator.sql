@@ -22,7 +22,7 @@ with denominator as (
         , measure_id
         , measure_name
         , measure_version
-    from {{ ref('quality_measures__int_adhras_denominator')}}
+    from {{ ref('quality_measures__int_adhras_denominator') }}
 
 )
 
@@ -34,26 +34,27 @@ with denominator as (
         , dispensing_date
         , days_supply
         , performance_period_end
-        , case when ({{ dbt.dateadd(
-              datepart="day"
-            , interval='days_supply'
-            , from_date_or_timestamp= 'dispensing_date'
-            ) 
-            }}) > performance_period_end
-        then (days_supply - ({{ datediff(
-              'performance_period_end'
-            , 
-                dbt.dateadd(
-                    datepart="day"
-                    , interval='days_supply'
-                    , from_date_or_timestamp = 'dispensing_date'
+        , case 
+            when {{ dbt.dateadd (
+                        datepart="day"
+                        , interval='days_supply'
+                        , from_date_or_timestamp= 'dispensing_date'
                     ) 
-                
-            , 'day'
-            ) }} )
-            )
-        else
-              days_supply
+                }} > performance_period_end
+            then ( days_supply - 
+                    {{ datediff (
+                          'performance_period_end'
+                        , dbt.dateadd(
+                              datepart="day"
+                            , interval='days_supply'
+                            , from_date_or_timestamp = 'dispensing_date'
+                            ) 
+                    
+                        , 'day'
+                        ) 
+                    }} 
+                )
+            else days_supply
         end as updated_days_supply
     from denominator
 
@@ -66,21 +67,23 @@ with denominator as (
           patient_id
         , dispensing_date
         , updated_days_supply
-        , case when ({{ dbt.dateadd(
-              datepart="day"
-            , interval="days_supply"
-            , from_date_or_timestamp= "dispensing_date" 
-            ) 
-            }}) > performance_period_end
-        then performance_period_end
-        else
-            {{ dbt.dateadd(
-                datepart="day"
-                , interval="days_supply"
-                , from_date_or_timestamp= "dispensing_date" 
+        , case 
+            when ({{ dbt.dateadd(
+                    datepart="day"
+                    , interval="days_supply"
+                    , from_date_or_timestamp= "dispensing_date"
+                ) 
+                }}) > performance_period_end
+            then 
+                performance_period_end
+            else
+                {{ dbt.dateadd(
+                    datepart="day"
+                    , interval="days_supply"
+                    , from_date_or_timestamp= "dispensing_date"
                 ) 
                 }}
-        end as end_date
+            end as end_date
         , lead(dispensing_date) over(partition by patient_id order by dispensing_date) as lead_date
     from patient_with_updated_days_supply
 
@@ -108,8 +111,11 @@ with denominator as (
         , updated_days_supply
         , end_date
         , updated_lead_date
-        , case when {{ datediff('updated_lead_date', 'end_date', 'day') }} < 0 then 0 
-        else {{ datediff('updated_lead_date', 'end_date', 'day') }} end as overlap
+        , case 
+            when {{ datediff('updated_lead_date', 'end_date', 'day') }} < 0 
+            then 0 
+            else {{ datediff('updated_lead_date', 'end_date', 'day') }} 
+            end as overlap
     from patient_with_updated_dates
 
 )
@@ -141,9 +147,9 @@ with denominator as (
     select
           dc.patient_id
         , days_covered*100/treatment_period_days as pdc
-    from patient_with_days_covered as dc
-    inner join patient_with_treatment_period_days as tpd
-    on dc.patient_id = tpd.patient_id
+    from patient_with_days_covered as days_covered_patient
+    inner join patient_with_treatment_period_days as treatment_period_days_patient
+        on days_covered_patient.patient_id = treatment_period_days_patient.patient_id
 
 )
 
@@ -151,18 +157,18 @@ with denominator as (
 , valid_patients as (
 
     select 
-          pp.patient_id
-        , dm.first_dispensing_date
-        , dm.performance_period_begin
-        , dm.performance_period_end
-        , dm.measure_id
-        , dm.measure_name
-        , dm.measure_version
+          patient_with_pdc.patient_id
+        , denominator.first_dispensing_date
+        , denominator.performance_period_begin
+        , denominator.performance_period_end
+        , denominator.measure_id
+        , denominator.measure_name
+        , denominator.measure_version
         , pdc 
         , 1 as numerator_flag
-    from patient_with_pdc as pp
-    inner join denominator as dm
-    on pp.patient_id = dm.patient_id 
+    from patient_with_pdc 
+    inner join denominator 
+        on patient_with_pdc.patient_id = denominator.patient_id 
     where cast( pdc as {{ dbt.type_numeric() }} ) >= 80.0
 
 )
